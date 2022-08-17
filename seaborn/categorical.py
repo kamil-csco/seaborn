@@ -896,7 +896,9 @@ class _ViolinPlotter(_CategoricalPlotter):
     def __init__(self, x, y, hue, data, order, hue_order,
                  bw, cut, scale, scale_hue, gridsize,
                  width, inner, split, dodge, orient, linewidth,
-                 color, palette, saturation):
+                 color, palette, saturation, **kwargs):
+
+        self.counts_custom = kwargs.get('counts_custom', None)
 
         self.establish_variables(x, y, hue, data, orient, order, hue_order)
         self.establish_colors(color, palette, saturation)
@@ -1041,9 +1043,12 @@ class _ViolinPlotter(_CategoricalPlotter):
 
         elif scale == "count":
             self.scale_count(density, counts, scale_hue)
-            
+
         elif scale == "count_area":
-            self.scale_count_area(self, density, max_density, counts, scale_hue)
+            self.scale_count_area(density, max_density, counts, scale_hue)
+
+        elif scale == "count_custom":
+            self.scale_count_area(density, max_density, self.counts_custom, scale_hue)
 
         else:
             raise ValueError(f"scale method '{scale}' not recognized")
@@ -1127,7 +1132,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                             scaler = count / counts.max()
                         d /= d.max()
                         d *= scaler
-                        
+
     def scale_count_area(self, density, max_density, counts, scale_hue):
         """Scale each density curve by the number of observations."""
         if self.hue_names is None:
@@ -1147,7 +1152,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                     if d.size > 1:
                         d /= max
                         d *= scaler
-                    
+
     @property
     def dwidth(self):
 
@@ -2327,7 +2332,7 @@ def violinplot(
     plotter = _ViolinPlotter(x, y, hue, data, order, hue_order,
                              bw, cut, scale, scale_hue, gridsize,
                              width, inner, split, dodge, orient, linewidth,
-                             color, palette, saturation)
+                             color, palette, saturation, **kwargs)
 
     if ax is None:
         ax = plt.gca()
