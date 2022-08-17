@@ -901,6 +901,15 @@ class _ViolinPlotter(_CategoricalPlotter):
         self.counts_custom = kwargs.get('counts_custom', None)
 
         self.establish_variables(x, y, hue, data, orient, order, hue_order)
+
+        self.column_proportions = None
+        if self.plot_data is not None:
+            self.column_proportions = []
+            for column_data in self.plot_data:
+                self.column_proportions.append(np.float(column_data.sum()))
+            self.column_proportions = np.array(self.column_proportions)
+            self.column_proportions /= np.float(self.column_proportions.sum())
+
         self.establish_colors(color, palette, saturation)
         self.estimate_densities(bw, cut, scale, scale_hue, gridsize)
 
@@ -1038,11 +1047,17 @@ class _ViolinPlotter(_CategoricalPlotter):
         if scale == "area":
             self.scale_area(density, max_density, scale_hue)
 
+        elif scale == "area2":
+            self.scale_area2(density, max_density, scale_hue, support)
+
         elif scale == "width":
             self.scale_width(density)
 
         elif scale == "count":
             self.scale_count(density, counts, scale_hue)
+
+        elif scale == "relative_area":
+            self.scale_relative_area(density, max_density, counts, scale_hue, support)
 
         elif scale == "count_area":
             self.scale_count_area(density, max_density, counts, scale_hue)
@@ -1099,6 +1114,28 @@ class _ViolinPlotter(_CategoricalPlotter):
                         max = max_density.max()
                     if d.size > 1:
                         d /= max
+    def scale_area2(self, density, max_density, scale_hue, support):
+        """Scale to unit area."""
+        if self.hue_names is None:
+            #print(f'MAX densities: {max_density}')
+            for i, (d, s) in enumerate(zip(density, support)):
+                if d.size > 1:
+                    area_before_scale = np.trapz(y=d, x=s)
+                    width_normalization = max_density.max()
+                    scaler = area_before_scale * width_normalization
+                    d /= scaler
+                    #area = np.trapz(y=d, x=s)
+                    #print(f'np.trapz(d, s) for violin #{i+1}: {area_before_scale}')
+        else:
+            raise Exception('Not implemented')
+            for i, group in enumerate(density):
+                for d in group:
+                    if scale_hue:
+                        max = 1 # support[i].max()
+                    else:
+                        max = 1 # support.max()
+                    if d.size > 1:
+                        d /= max
 
     def scale_width(self, density):
         """Scale each density curve to the same height."""
@@ -1132,7 +1169,28 @@ class _ViolinPlotter(_CategoricalPlotter):
                             scaler = count / counts.max()
                         d /= d.max()
                         d *= scaler
-
+    def scale_relative_area(self, density, max_density, counts, scale_hue, support):
+        """Scale the relative areas across violins."""
+        if self.hue_names is None:
+            for i, (d, s) in enumerate(zip(density, support)):
+                if d.size > 1:
+                    area_before_scale = np.trapz(y=d, x=s)
+                    width_normalization = max_density.max()
+                    scaler = area_before_scale * width_normalization / self.column_proportions[i]
+                    d /= scaler
+                    #area = np.trapz(y=d, x=s)
+                    #print(f'np.trapz(d, s) for violin #{i+1}: {area_before_scale}')
+        else:
+            raise Exception('Not implemented')
+            TODO: Add hue support
+            for i, group in enumerate(density):
+                for d in group:
+                    if scale_hue:
+                        max = 1 # support[i].max()
+                    else:
+                        max = 1 # support.max()
+                    if d.size > 1:
+                        d /= max
     def scale_count_area(self, density, max_density, counts, scale_hue):
         """Scale each density curve by the number of observations."""
         if self.hue_names is None:
