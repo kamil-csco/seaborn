@@ -902,13 +902,13 @@ class _ViolinPlotter(_CategoricalPlotter):
 
         self.establish_variables(x, y, hue, data, orient, order, hue_order)
 
-        self.column_proportions = None
-        if self.plot_data is not None:
-            self.column_proportions = []
-            for column_data in self.plot_data:
-                self.column_proportions.append(np.float(column_data.sum()))
-            self.column_proportions = np.array(self.column_proportions)
-            self.column_proportions /= np.float(self.column_proportions.sum())
+        #self.column_proportions = None
+        #if self.plot_data is not None:
+        #    self.column_proportions = []
+        #    for column_data in self.plot_data:
+        #        self.column_proportions.append(np.float(column_data.sum()))
+        #    self.column_proportions = np.array(self.column_proportions)
+        #    self.column_proportions /= np.float(self.column_proportions.sum())
 
         self.establish_colors(color, palette, saturation)
         self.estimate_densities(bw, cut, scale, scale_hue, gridsize)
@@ -941,14 +941,17 @@ class _ViolinPlotter(_CategoricalPlotter):
         if self.hue_names is None:
             support = []
             density = []
-            counts = np.zeros(len(self.plot_data))
-            max_density = np.zeros(len(self.plot_data))
+            plot_data_len = len(self.plot_data)
+            counts = np.zeros(plot_data_len)
+            max_density = np.zeros(plot_data_len)
+            column_proportions = np.zeros(plot_data_len)
         else:
             support = [[] for _ in self.plot_data]
             density = [[] for _ in self.plot_data]
             size = len(self.group_names), len(self.hue_names)
             counts = np.zeros(size)
             max_density = np.zeros(size)
+            column_proportions = np.zeros(size)
 
         for i, group_data in enumerate(self.plot_data):
 
@@ -966,6 +969,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                     density.append(np.array([1.]))
                     counts[i] = 0
                     max_density[i] = 0
+                    column_proportions[i] = 0
                     continue
 
                 # Handle special case of a single unique datapoint
@@ -974,6 +978,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                     density.append(np.array([1.]))
                     counts[i] = 1
                     max_density[i] = 0
+                    column_proportions[i] = 0
                     continue
 
                 # Fit the KDE and get the used bandwidth size
@@ -988,6 +993,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                 density.append(density_i)
                 counts[i] = kde_data.size
                 max_density[i] = density_i.max()
+                column_proportions[i] = np.float(kde_data.sum())
 
             # Option 2: we have nested grouping by a hue variable
             # ---------------------------------------------------
@@ -1001,6 +1007,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                         density[i].append(np.array([1.]))
                         counts[i, j] = 0
                         max_density[i, j] = 0
+                        column_proportions[i, j] = 0
                         continue
 
                     # Select out the observations for this hue level
@@ -1015,6 +1022,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                         density[i].append(np.array([1.]))
                         counts[i, j] = 0
                         max_density[i, j] = 0
+                        column_proportions[i, j] = 0
                         continue
 
                     # Handle special case of a single unique datapoint
@@ -1023,6 +1031,7 @@ class _ViolinPlotter(_CategoricalPlotter):
                         density[i].append(np.array([1.]))
                         counts[i, j] = 1
                         max_density[i, j] = 0
+                        column_proportions[i, j] = 0
                         continue
 
                     # Fit the KDE and get the used bandwidth size
@@ -1038,6 +1047,13 @@ class _ViolinPlotter(_CategoricalPlotter):
                     density[i].append(density_ij)
                     counts[i, j] = kde_data.size
                     max_density[i, j] = density_ij.max()
+                    column_proportions[i, j] = np.float(kde_data.sum())
+
+        if self.plot_hues is None:
+            column_proportions /= np.float(column_proportions.sum())
+        else:
+            for i, column in enumerate(column_proportions.T):
+                column_proportions[:, i] /= np.float(column.sum())
 
         # Scale the height of the density curve.
         # For a violinplot the density is non-quantitative.
@@ -1047,8 +1063,8 @@ class _ViolinPlotter(_CategoricalPlotter):
         if scale == "area":
             self.scale_area(density, max_density, scale_hue)
 
-        elif scale == "area2":
-            self.scale_area2(density, max_density, scale_hue, support)
+        elif scale == "area_v2":
+            self.scale_area_v2(density, max_density, scale_hue, support)
 
         elif scale == "width":
             self.scale_width(density)
@@ -1057,7 +1073,7 @@ class _ViolinPlotter(_CategoricalPlotter):
             self.scale_count(density, counts, scale_hue)
 
         elif scale == "relative_area":
-            self.scale_relative_area(density, max_density, counts, scale_hue, support)
+            self.scale_relative_area(density, max_density, counts, scale_hue, support, column_proportions)
 
         elif scale == "count_area":
             self.scale_count_area(density, max_density, counts, scale_hue)
@@ -1109,33 +1125,32 @@ class _ViolinPlotter(_CategoricalPlotter):
             for i, group in enumerate(density):
                 for d in group:
                     if scale_hue:
-                        max = max_density[i].max()
+                        width_norm = max_density[i].max()
                     else:
-                        max = max_density.max()
+                        width_norm = max_density.max()
                     if d.size > 1:
-                        d /= max
-    def scale_area2(self, density, max_density, scale_hue, support):
+                        d /= width_norm
+
+    def scale_area_v2(self, density, max_density, scale_hue, support):
         """Scale to unit area."""
         if self.hue_names is None:
-            #print(f'MAX densities: {max_density}')
             for i, (d, s) in enumerate(zip(density, support)):
                 if d.size > 1:
-                    area_before_scale = np.trapz(y=d, x=s)
-                    width_normalization = max_density.max()
-                    scaler = area_before_scale * width_normalization
-                    d /= scaler
-                    #area = np.trapz(y=d, x=s)
-                    #print(f'np.trapz(d, s) for violin #{i+1}: {area_before_scale}')
+                    initial_area = np.trapz(y=d, x=s)  # should be close to 1 already (from KDE), but that is not always the case
+                    width_norm = max_density.max()  # as per SNS, keep areas same, but scale to max unit width
+                    area_scaler = initial_area * width_norm  # get the combined scaler
+                    d /= area_scaler  # apply the scaling to the density
         else:
-            raise Exception('Not implemented')
-            for i, group in enumerate(density):
-                for d in group:
+            for i, (group_density, group_support) in enumerate(zip(density, support)):
+                for d, s in zip(group_density, group_support):
+                    initial_area = np.trapz(y=d, x=s)
                     if scale_hue:
-                        max = 1 # support[i].max()
+                        width_norm = max_density[i].max()
                     else:
-                        max = 1 # support.max()
+                        width_norm = max_density.max()
+                    area_scaler = initial_area * width_norm
                     if d.size > 1:
-                        d /= max
+                        d /= area_scaler
 
     def scale_width(self, density):
         """Scale each density curve to the same height."""
@@ -1169,28 +1184,45 @@ class _ViolinPlotter(_CategoricalPlotter):
                             scaler = count / counts.max()
                         d /= d.max()
                         d *= scaler
-    def scale_relative_area(self, density, max_density, counts, scale_hue, support):
+
+    def scale_relative_area(self, density, max_density, counts, scale_hue, support, column_proportions):
         """Scale the relative areas across violins."""
         if self.hue_names is None:
+            final_proportions = []
             for i, (d, s) in enumerate(zip(density, support)):
                 if d.size > 1:
-                    area_before_scale = np.trapz(y=d, x=s)
-                    width_normalization = max_density.max()
-                    scaler = area_before_scale * width_normalization / self.column_proportions[i]
-                    d /= scaler
-                    #area = np.trapz(y=d, x=s)
-                    #print(f'np.trapz(d, s) for violin #{i+1}: {area_before_scale}')
+                    initial_area = np.trapz(y=d, x=s)  # should be close to 1 already (from KDE), but that is not always the case
+                    width_norm = max_density.max()  # as per SNS, keep areas same, but scale to max unit width
+                    area_scaler = initial_area * width_norm / column_proportions[i]  # also incorporate proportions in the final scaler
+                    d /= area_scaler  # apply the scaling to the density
+                    final_area = np.trapz(y=d, x=s)
+                    final_proportions.append(final_area)
+            final_proportions = np.array(final_proportions)
+            final_proportions /= final_proportions.sum()
+            print(f'final_proportions: {final_proportions}')
         else:
-            raise Exception('Not implemented')
-            TODO: Add hue support
-            for i, group in enumerate(density):
-                for d in group:
+            final_proportions = []
+            for i, (group_density, group_support) in enumerate(zip(density, support)):
+                final_prop_set = []
+                for j, (d, s) in enumerate(zip(group_density, group_support)):
+                    initial_area = np.trapz(y=d, x=s)
+                    relative_prop = column_proportions[i, j]
                     if scale_hue:
-                        max = 1 # support[i].max()
+                        width_norm = max_density[i].max()  # this is NOT what we want - it does not preserve proportions
+                        raise Exception('Set scale_hue=False to preserve relative area proportions.')
                     else:
-                        max = 1 # support.max()
+                        width_norm = max_density.max()
+                    area_scaler = initial_area * width_norm / relative_prop  # also incorporate proportions in the final scaler
                     if d.size > 1:
-                        d /= max
+                        d /= area_scaler
+                    final_area = np.trapz(y=d, x=s)
+                    final_prop_set.append(final_area)
+                final_proportions.append(final_prop_set)
+            final_proportions = np.array(final_proportions)
+            final_proportions_sum = final_proportions.sum()
+            final_proportions /= final_proportions_sum * len(density)
+            print(f'final_proportions: {final_proportions}')
+
     def scale_count_area(self, density, max_density, counts, scale_hue):
         """Scale each density curve by the number of observations."""
         if self.hue_names is None:
